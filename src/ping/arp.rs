@@ -1,4 +1,8 @@
+use std::io;
 use std::net::Ipv4Addr;
+use std::sync::mpsc::channel;
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 use pnet::datalink::{self, Channel, Config, NetworkInterface};
 use pnet::packet::Packet;
@@ -60,21 +64,74 @@ pub fn from_ethernet<'a>(ethernet_packet: &'a EthernetPacket) -> Result<ArpPacke
     Ok(ArpPacket::new(ethernet_packet.payload()).ok_or(ErrorKind::ParsePacketError)?)
 }
 
-pub fn ping_once(source_ip: Ipv4Addr, source_mac: MacAddr, target_ip: Ipv4Addr, target_mac: MacAddr,
-                 interface: NetworkInterface, channel: Channel)
-                 -> Result<()> {
-    let (mut tx, rx) = match channel {
-        Channel::Ethernet(tx, rx) => (tx, rx),
-        _ => unreachable!(),
+pub fn ping(interface: NetworkInterface, timeout: u64, count: u64, source_ip: Ipv4Addr, source_mac: MacAddr,
+            target_ip: Ipv4Addr, target_mac: MacAddr)
+            -> Result<()> {
+    let mut config = Config::default();
+    let timeout = Duration::from_secs(timeout);
+    config.read_timeout = Some(timeout);
+    config.write_timeout = Some(timeout);
+
+    let (mut tx, mut rx) = match datalink::channel(&interface, config) {
+        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => return Err(ErrorKind::CreateChannelError.into()),
+        Err(e) => return Err(e.into()),
     };
 
     let mut buffer = arp_buffer();
     let arp_ether = build_ethernet(&mut buffer, source_ip, source_mac, target_ip, target_mac)?;
 
-    // record arp request send time
-    tx.send_to(&arp_ether.to_immutable(), None).ok_or(ErrorKind::SendPacketError)??;
+    'outer: loop {
+        let now = SystemTime::now();
+        tx.send_to(&arp_ether.to_immutable(), None).ok_or(ErrorKind::SendPacketError)??;
 
-    // arp response not received in *** than consider as timeout
+        let mut rx_iter = rx.iter();
+        loop {
+            let elapsed = now.elapsed().unwrap();
+            if elapsed > timeout {
+                println!("Timeout");
+                continue 'outer;
+            }
+
+            match rx_iter.next() {
+                Ok(packet) => {
+                    if (packet.get_ethertype() != EtherTypes::Arp) ||
+                        (packet.get_destination() != interface.mac_address())
+                    {
+                        continue;
+                    }
+
+                    let arp = from_ethernet(&packet)?;
+                    // is a suitable arp reply for we ask
+                    if (arp.get_operation() != ArpOperations::Reply) || (arp.get_target_proto_addr() != source_ip) ||
+                        (arp.get_target_hw_addr() != source_mac) ||
+                        (arp.get_sender_proto_addr() != target_ip)
+                    {
+                        continue;
+                    }
+
+                    let elapsed = now.elapsed().unwrap();
+                    println!("{:?}", elapsed);
+                    break;
+                }
+                Err(e) => {
+                    match e.kind() {
+                        io::ErrorKind::TimedOut => {
+                            println!("Timeout");
+                            continue 'outer;
+                        }
+
+                        _ => {
+                            return Err(e.into());
+                        }
+                    }
+                }
+            };
+        }
+
+        // sleep for 1 sec
+        thread::sleep_ms(1000);
+    }
 
     Ok(())
 }
