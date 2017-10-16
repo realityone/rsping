@@ -150,8 +150,7 @@ impl Iterator for ARPPing {
         };
 
         loop {
-            let elapsed = now.elapsed().unwrap();
-            if elapsed > ctx.timeout {
+            if now.elapsed().unwrap() > ctx.timeout {
                 return Some(Err(ErrorKind::PingTimeout.into()));
             }
 
@@ -176,8 +175,7 @@ impl Iterator for ARPPing {
                         continue;
                     }
 
-                    let elapsed = now.elapsed().unwrap();
-                    return Some(Ok((arp.from_packet(), elapsed)));
+                    return Some(Ok((arp.from_packet(), now.elapsed().unwrap())));
                 }
                 Err(e) => {
                     match e.kind() {
