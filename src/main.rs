@@ -23,5 +23,6 @@ fn main() {
     let arpping = ping::arp::ARPPing::new(iface, 1, 30, source_ip, source_mac, target_ip, target_mac);
     for r in arpping.into_iter() {
         println!("{:?}", r);
+        ::std::thread::sleep_ms(1000);
     }
 }

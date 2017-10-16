@@ -49,7 +49,7 @@ impl ARPPing {
         }
     }
 
-    fn arp_buffer() -> Vec<u8> {
+    fn ethernet_buffer() -> Vec<u8> {
         vec![0u8; *MINIMUM_BUFFER_SIZE]
     }
 
@@ -126,7 +126,7 @@ impl Iterator for ARPPing {
 
         let &mut (ref mut tx, ref mut rx) = self.channel.as_mut().unwrap();
 
-        let mut buffer = Self::arp_buffer();
+        let mut buffer = Self::ethernet_buffer();
         let arp_ether =
             Self::build_ethernet(&mut buffer, self.source_ip, self.source_mac, self.target_ip, self.target_mac)
                 .expect("Failed to build ARP packet");
