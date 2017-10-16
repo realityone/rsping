@@ -136,8 +136,8 @@ impl Iterator for ARPPing {
         }
 
         {
-            let t = self.times.as_mut().unwrap();
-            *t = *t + 1;
+            let times = self.times.as_mut().unwrap();
+            *times += 1;
         }
 
         let now = SystemTime::now();
