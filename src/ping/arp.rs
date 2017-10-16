@@ -16,6 +16,12 @@ lazy_static!{
     static ref MINIMUM_BUFFER_SIZE: usize = MutableArpPacket::minimum_packet_size() + MutableEthernetPacket::minimum_packet_size();
 }
 
+struct ARPPingCtx {
+    times: u64,
+    timeout: Duration,
+    channel: (Box<EthernetDataLinkSender>, Box<EthernetDataLinkReceiver>),
+}
+
 pub struct ARPPing {
     interface: NetworkInterface,
     timeout: u64,
@@ -25,9 +31,7 @@ pub struct ARPPing {
     target_ip: Ipv4Addr,
     target_mac: MacAddr,
 
-    times: Option<u64>,
-    _timeout: Option<Duration>,
-    channel: Option<(Box<EthernetDataLinkSender>, Box<EthernetDataLinkReceiver>)>,
+    ctx: Option<ARPPingCtx>,
 }
 
 impl ARPPing {
@@ -43,9 +47,7 @@ impl ARPPing {
             target_ip,
             target_mac,
 
-            times: None,
-            _timeout: None,
-            channel: None,
+            ctx: None,
         }
     }
 
@@ -98,21 +100,23 @@ impl ARPPing {
     }
 
     fn init_ping_context(&mut self) {
-        self.times = Some(0);
-        self._timeout = Some(Duration::from_secs(self.timeout));
+        let times = 0;
+        let timeout = Duration::from_secs(self.timeout);
 
         let mut config = Config::default();
-        let timeout = Duration::from_secs(self.timeout);
         config.read_timeout = Some(timeout);
         config.write_timeout = Some(timeout);
 
-        let channel = datalink::channel(&self.interface, config).expect("Failed to create datalink channel");
-        match channel {
-            Channel::Ethernet(tx, rx) => {
-                self.channel = Some((tx, rx));
-            }
+        let channel = match datalink::channel(&self.interface, config).expect("Failed to create datalink channel") {
+            Channel::Ethernet(tx, rx) => (tx, rx),
             _ => unreachable!(),
         };
+
+        self.ctx = Some(ARPPingCtx {
+                            times,
+                            timeout,
+                            channel,
+                        });
     }
 }
 
@@ -120,25 +124,23 @@ impl Iterator for ARPPing {
     type Item = PingResult<MacAddr>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.times.is_none() {
+        if self.ctx.is_none() {
             self.init_ping_context();
         }
 
-        let &mut (ref mut tx, ref mut rx) = self.channel.as_mut().unwrap();
+        let ctx = self.ctx.as_mut().unwrap();
+
+        let (ref mut tx, ref mut rx) = ctx.channel;
 
         let mut buffer = Self::ethernet_buffer();
         let arp_ether =
             Self::build_ethernet(&mut buffer, self.source_ip, self.source_mac, self.target_ip, self.target_mac)
                 .expect("Failed to build ARP packet");
 
-        if self.times.unwrap() > self.count {
+        if ctx.times > self.count {
             return None;
         }
-
-        {
-            let times = self.times.as_mut().unwrap();
-            *times += 1;
-        }
+        ctx.times += 1;
 
         let now = SystemTime::now();
         let mut rx_iter = rx.iter();
@@ -149,7 +151,7 @@ impl Iterator for ARPPing {
 
         loop {
             let elapsed = now.elapsed().unwrap();
-            if elapsed > self._timeout.unwrap() {
+            if elapsed > ctx.timeout {
                 return Some(Err(ErrorKind::PingTimeout.into()));
             }
 
