@@ -4,8 +4,8 @@ use std::time::{Duration, SystemTime};
 
 use pnet::datalink::{self, Channel, Config, NetworkInterface};
 use pnet::datalink::{EthernetDataLinkReceiver, EthernetDataLinkSender};
-use pnet::packet::Packet;
-use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
+use pnet::packet::{FromPacket, Packet};
+use pnet::packet::arp::{Arp, ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 use pnet::util::MacAddr;
 
@@ -121,7 +121,7 @@ impl ARPPing {
 }
 
 impl Iterator for ARPPing {
-    type Item = PingResult<MacAddr>;
+    type Item = PingResult<Arp>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ctx.is_none() {
@@ -177,7 +177,7 @@ impl Iterator for ARPPing {
                     }
 
                     let elapsed = now.elapsed().unwrap();
-                    return Some(Ok((arp.get_sender_hw_addr(), elapsed)));
+                    return Some(Ok((arp.from_packet(), elapsed)));
                 }
                 Err(e) => {
                     match e.kind() {
