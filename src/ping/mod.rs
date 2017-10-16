@@ -6,4 +6,4 @@ use std::time::Duration;
 
 use error::*;
 
-type PingResult = Result<Duration>;
+type PingResult<T> = Result<(T, Duration)>;

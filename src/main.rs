@@ -14,7 +14,7 @@ use std::str::FromStr;
 
 fn main() {
     let source_ip = Ipv4Addr::from_str("10.8.0.31").unwrap();
-    let source_mac = MacAddr::from_str("98:01:a7:8d:84:35").unwrap();
+    let source_mac = MacAddr::from_str("98:01:a7:8d:84:39").unwrap();
     let target_ip = Ipv4Addr::from_str("10.8.0.1").unwrap();
     let target_mac = MacAddr::from_str("FF:FF:FF:FF:FF:FF").unwrap();
 

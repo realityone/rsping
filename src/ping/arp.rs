@@ -117,7 +117,7 @@ impl ARPPing {
 }
 
 impl Iterator for ARPPing {
-    type Item = PingResult;
+    type Item = PingResult<MacAddr>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.times.is_none() {
@@ -175,7 +175,7 @@ impl Iterator for ARPPing {
                     }
 
                     let elapsed = now.elapsed().unwrap();
-                    return Some(Ok(elapsed));
+                    return Some(Ok((arp.get_sender_hw_addr(), elapsed)));
                 }
                 Err(e) => {
                     match e.kind() {
