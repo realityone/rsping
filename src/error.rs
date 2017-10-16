@@ -4,6 +4,8 @@ error_chain! {
         ParsePacketError
         SendPacketError
         CreateChannelError
+
+        PingTimeout
     }
 
     foreign_links {
