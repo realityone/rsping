@@ -51,16 +51,12 @@ impl ARPPing {
         }
     }
 
-    fn ethernet_buffer() -> Vec<u8> {
-        vec![0u8; *MINIMUM_BUFFER_SIZE]
-    }
-
     // Build an ethernet packet for sending ARP request
-    fn build_ethernet<'a>(buffer: &'a mut Vec<u8>, source_ip: Ipv4Addr, source_mac: MacAddr, target_ip: Ipv4Addr,
-                          target_mac: MacAddr)
-                          -> Result<MutableEthernetPacket<'a>> {
+    fn build_ethernet(source_ip: Ipv4Addr, source_mac: MacAddr, target_ip: Ipv4Addr, target_mac: MacAddr)
+                      -> Result<MutableEthernetPacket<'static>> {
+        let buffer = vec![0u8; *MINIMUM_BUFFER_SIZE];
         let mut ethernet_packet = {
-            let mut ethernet_packet = MutableEthernetPacket::new(buffer).ok_or(ErrorKind::BuildPacketError)?;
+            let mut ethernet_packet = MutableEthernetPacket::owned(buffer).ok_or(ErrorKind::BuildPacketError)?;
 
             ethernet_packet.set_destination(target_mac);
             ethernet_packet.set_source(source_mac);
@@ -132,10 +128,8 @@ impl Iterator for ARPPing {
 
         let (ref mut tx, ref mut rx) = ctx.channel;
 
-        let mut buffer = Self::ethernet_buffer();
-        let arp_ether =
-            Self::build_ethernet(&mut buffer, self.source_ip, self.source_mac, self.target_ip, self.target_mac)
-                .expect("Failed to build ARP packet");
+        let arp_ether = Self::build_ethernet(self.source_ip, self.source_mac, self.target_ip, self.target_mac)
+            .expect("Failed to build ARP packet");
 
         if ctx.times > self.count {
             return None;
