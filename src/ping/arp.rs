@@ -201,9 +201,7 @@ mod test {
         let target_ip = Ipv4Addr::from_str("192.168.1.3").unwrap();
         let target_mac = MacAddr::from_str("00:0C:29:24:20:6F").unwrap();
 
-        let mut buffer = ARPPing::arp_buffer();
-
-        let arp_ether = ARPPing::build_ethernet(&mut buffer, source_ip, source_mac, target_ip, target_mac).unwrap();
+        let arp_ether = ARPPing::build_ethernet(source_ip, source_mac, target_ip, target_mac).unwrap();
         let arp_ether2 = arp_ether.to_immutable();
         let parsed = ARPPing::from_ethernet(&arp_ether2).unwrap();
 
