@@ -15,7 +15,7 @@ use pnet::util::MacAddr;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-fn main() {
+fn cli<'a, 'b>() -> App<'a, 'b> {
     let arp = SubCommand::with_name("arp")
         .about("Ping destination by sending ARP packets")
         .arg(Arg::with_name("target").required(true));
@@ -28,7 +28,7 @@ fn main() {
         .about("Ping destination by sending TCP packets")
         .arg(Arg::with_name("target").required(true));
 
-    let cli = App::new("rsping")
+    let app = App::new("rsping")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .setting(AppSettings::GlobalVersion)
         .version("0.1")
@@ -42,5 +42,9 @@ fn main() {
         .subcommand(icmp.display_order(2))
         .subcommand(tcp.display_order(3));
 
-    let matches = cli.get_matches();
+    app
+}
+
+fn main() {
+    let matches = cli().get_matches();
 }
