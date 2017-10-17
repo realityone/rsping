@@ -3,26 +3,44 @@ extern crate pnet;
 extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
+extern crate clap;
 
 pub mod error;
 mod ping;
 mod utils;
+
+use clap::{App, AppSettings, Arg, SubCommand};
 
 use pnet::util::MacAddr;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
 fn main() {
-    let source_ip = Ipv4Addr::from_str("10.8.0.31").unwrap();
-    let source_mac = MacAddr::from_str("98:01:a7:8d:84:39").unwrap();
-    let target_ip = Ipv4Addr::from_str("10.8.0.1").unwrap();
-    let target_mac = MacAddr::from_str("FF:FF:FF:FF:FF:FF").unwrap();
+    let arp = SubCommand::with_name("arp")
+        .about("Ping destination by sending ARP packets")
+        .arg(Arg::with_name("target").required(true));
 
-    let ifname = "en0";
-    let iface = utils::find_interface(ifname).expect(format!("interface {} does not exist", ifname).as_str());
-    let arpping = ping::arp::ARPPing::new(iface, 1, 30, source_ip, source_mac, target_ip, target_mac);
-    for r in arpping.into_iter() {
-        println!("{:?}", r);
-        ::std::thread::sleep_ms(1000);
-    }
+    let icmp = SubCommand::with_name("icmp")
+        .about("Ping destination by sending ICMP packets")
+        .arg(Arg::with_name("target").required(true));
+
+    let tcp = SubCommand::with_name("tcp")
+        .about("Ping destination by sending TCP packets")
+        .arg(Arg::with_name("target").required(true));
+
+    let cli = App::new("rsping")
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .setting(AppSettings::GlobalVersion)
+        .version("0.1")
+        .author("realityone <realityone@me.com>")
+        .about("The network ping utils")
+        .arg(Arg::with_name("d")
+                 .short("d")
+                 .multiple(true)
+                 .help("Print debug information verbosely"))
+        .subcommand(arp.display_order(1))
+        .subcommand(icmp.display_order(2))
+        .subcommand(tcp.display_order(3));
+
+    let matches = cli.get_matches();
 }
