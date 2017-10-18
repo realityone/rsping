@@ -296,7 +296,7 @@ impl Cmd for ARPPing {
 
         let arp = ARPPing::new(interface, timeout, count, source_ip, source_mac, target_ip, target_mac);
 
-        println!("ARP PING {} ({})", target_ip, target_ip);
+        println!("ARP PING {} ({})", target_mac, target_ip);
         for r in arp.into_iter() {
             println!("{}", ARPPing::format_ping_result(r));
             thread::sleep(Duration::from_secs(interval));
