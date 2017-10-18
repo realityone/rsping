@@ -295,6 +295,8 @@ impl Cmd for ARPPing {
                                 .unwrap_or(MacAddr::from_str("FF:FF:FF:FF:FF:FF").unwrap());
 
         let arp = ARPPing::new(interface, timeout, count, source_ip, source_mac, target_ip, target_mac);
+
+        println!("ARP PING {} ({})", target_ip, target_ip);
         for r in arp.into_iter() {
             println!("{}", ARPPing::format_ping_result(r));
             thread::sleep(Duration::from_secs(interval));
