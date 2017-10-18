@@ -4,29 +4,21 @@ extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
 extern crate clap;
+extern crate ipnetwork;
 
-pub mod error;
+mod error;
 mod ping;
 mod utils;
 
-use clap::{App, AppSettings, Arg, SubCommand};
+use clap::{App, AppSettings, Arg};
 
-use pnet::util::MacAddr;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
+use ping::Cmd;
+use ping::arp::ARPPing;
 
-fn cli<'a, 'b>() -> App<'a, 'b> {
-    let arp = SubCommand::with_name("arp")
-        .about("Ping destination by sending ARP packets")
-        .arg(Arg::with_name("target").required(true));
-
-    let icmp = SubCommand::with_name("icmp")
-        .about("Ping destination by sending ICMP packets")
-        .arg(Arg::with_name("target").required(true));
-
-    let tcp = SubCommand::with_name("tcp")
-        .about("Ping destination by sending TCP packets")
-        .arg(Arg::with_name("target").required(true));
+fn cmd_main() {
+    let arp = ARPPing::subcommand();
+    let icmp = ping::icmp::IcmpPing::subcommand();
+    let tcp = ping::tcp::TcpPing::subcommand();
 
     let app = App::new("rsping")
         .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -34,17 +26,20 @@ fn cli<'a, 'b>() -> App<'a, 'b> {
         .version("0.1")
         .author("realityone <realityone@me.com>")
         .about("The network ping utils")
-        .arg(Arg::with_name("d")
-                 .short("d")
-                 .multiple(true)
-                 .help("Print debug information verbosely"))
+        .arg(Arg::with_name("d").short("d").help("Print debug information verbosely"))
         .subcommand(arp.display_order(1))
         .subcommand(icmp.display_order(2))
         .subcommand(tcp.display_order(3));
 
-    app
+    let matches = app.get_matches();
+
+    // subcommand is required
+    let (subc_name, subc_matchs) = matches.subcommand();
+    if subc_name == ARPPing::name() {
+        ARPPing::execute(subc_matchs.unwrap());
+    };
 }
 
 fn main() {
-    let matches = cli().get_matches();
+    cmd_main();
 }

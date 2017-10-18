@@ -1,16 +1,19 @@
-use std::io;
+use std::{io, thread};
 use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
+use clap::{App, Arg, ArgMatches};
 use pnet::datalink::{self, Channel, Config, NetworkInterface};
 use pnet::datalink::{EthernetDataLinkReceiver, EthernetDataLinkSender};
-use pnet::packet::{FromPacket, Packet};
+use pnet::packet::{FromPacket, Packet, PacketSize};
 use pnet::packet::arp::{Arp, ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 use pnet::util::MacAddr;
 
-use super::PingResult;
+use super::{BROADCAST_MAC, Cmd, PingResult};
 use error::*;
+use utils;
 
 lazy_static!{
     static ref MINIMUM_BUFFER_SIZE: usize = MutableArpPacket::minimum_packet_size() + MutableEthernetPacket::minimum_packet_size();
@@ -114,6 +117,19 @@ impl ARPPing {
                             channel,
                         });
     }
+
+    fn format_ping_result(result: PingResult<Arp>) -> String {
+        match result {
+            Ok((arp, size, duration)) => {
+                format!("{} bytes from {} ({}): time={} msec",
+                        size,
+                        arp.sender_hw_addr,
+                        arp.sender_proto_addr,
+                        utils::total_millis(duration))
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 impl Iterator for ARPPing {
@@ -131,7 +147,7 @@ impl Iterator for ARPPing {
         let arp_ether = Self::build_ethernet(self.source_ip, self.source_mac, self.target_ip, self.target_mac)
             .expect("Failed to build ARP packet");
 
-        if ctx.times > self.count {
+        if self.count != 0 && ctx.times > self.count {
             return None;
         }
         ctx.times += 1;
@@ -151,7 +167,8 @@ impl Iterator for ARPPing {
             match rx_iter.next() {
                 Ok(packet) => {
                     if (packet.get_ethertype() != EtherTypes::Arp) ||
-                        (packet.get_destination() != self.interface.mac_address())
+                        (!((packet.get_destination() == self.interface.mac_address()) ||
+                               (packet.get_destination() == BROADCAST_MAC)))
                     {
                         continue;
                     }
@@ -162,14 +179,16 @@ impl Iterator for ARPPing {
                     };
                     // is a suitable arp reply for we ask
                     if (arp.get_operation() != ArpOperations::Reply) ||
-                        (arp.get_target_proto_addr() != self.source_ip) ||
-                        (arp.get_target_hw_addr() != self.source_mac) ||
-                        (arp.get_sender_proto_addr() != self.target_ip)
+                        (arp.get_sender_proto_addr() != self.target_ip) ||
+                        (!((arp.get_target_hw_addr() == self.source_mac) ||
+                               (arp.get_target_hw_addr() == BROADCAST_MAC)))
                     {
                         continue;
                     }
 
-                    return Some(Ok((arp.from_packet(), now.elapsed().unwrap())));
+                    return Some(Ok((arp.from_packet(),
+                                    packet.packet_size() + packet.payload().len(),
+                                    now.elapsed().unwrap())));
                 }
                 Err(e) => {
                     match e.kind() {
@@ -183,6 +202,102 @@ impl Iterator for ARPPing {
                     }
                 }
             };
+        }
+    }
+}
+
+impl Cmd for ARPPing {
+    fn name() -> String {
+        "arp".to_string()
+    }
+
+    fn subcommand<'a, 'b>() -> App<'a, 'b> {
+        let default_ifname = "eth0";
+        #[cfg(target_os = "macos")]
+        let default_ifname = "en0";
+
+        App::new(Self::name())
+            .about("Ping destination by sending ARP packets")
+            .arg(Arg::with_name("interface")
+                     .short("i")
+                     .long("interface")
+                     .default_value("en0")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::interface_validator)
+                     .display_order(1))
+            .arg(Arg::with_name("source-mac")
+                     .short("s")
+                     .long("source-mac")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::mac_address_validator)
+                     .display_order(2))
+            .arg(Arg::with_name("source-ip")
+                     .short("S")
+                     .long("source-ip")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::ip_address_validator)
+                     .display_order(3))
+            .arg(Arg::with_name("target-mac")
+                     .short("t")
+                     .long("target-mac")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::mac_address_validator)
+                     .display_order(4))
+            .arg(Arg::with_name("interval")
+                     .long("interval")
+                     .default_value("1")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::num_validator)
+                     .display_order(5))
+            .arg(Arg::with_name("timeout")
+                     .long("timeout")
+                     .default_value("1")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::num_validator)
+                     .display_order(6))
+            .arg(Arg::with_name("count")
+                     .long("count")
+                     .default_value("0")
+                     .required(false)
+                     .takes_value(true)
+                     .validator(utils::num_validator)
+                     .hide_default_value(true)
+                     .display_order(6))
+            .arg(Arg::with_name("target-ip")
+                     .required(true)
+                     .takes_value(true)
+                     .validator(utils::ip_address_validator)
+                     .display_order(999))
+    }
+
+    fn execute<'a>(matches: &ArgMatches<'a>) {
+        let interface = utils::find_interface(matches.value_of("interface").unwrap()).unwrap();
+        let target_ip = Ipv4Addr::from_str(matches.value_of("target-ip").unwrap()).unwrap();
+        let interval = u64::from_str(matches.value_of("interval").unwrap()).unwrap();
+        let timeout = u64::from_str(matches.value_of("timeout").unwrap()).unwrap();
+        let count = u64::from_str(matches.value_of("count").unwrap()).unwrap();
+
+        let source_ip = matches.value_of("source-ip")
+                               .map(|v| Ipv4Addr::from_str(v).unwrap())
+                               .unwrap_or(utils::first_ipv4_address(&interface)
+                                              .unwrap_or(Ipv4Addr::from_str("0.0.0.0").unwrap()));
+        let source_mac = matches.value_of("source-mac")
+                                .map(|v| MacAddr::from_str(v).unwrap())
+                                .unwrap_or(interface.mac_address());
+        let target_mac = matches.value_of("target-mac")
+                                .map(|v| MacAddr::from_str(v).unwrap())
+                                .unwrap_or(MacAddr::from_str("FF:FF:FF:FF:FF:FF").unwrap());
+
+        let arp = ARPPing::new(interface, timeout, count, source_ip, source_mac, target_ip, target_mac);
+        for r in arp.into_iter() {
+            println!("{}", ARPPing::format_ping_result(r));
+            thread::sleep(Duration::from_secs(interval));
         }
     }
 }

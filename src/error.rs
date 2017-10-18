@@ -3,7 +3,6 @@ error_chain! {
         BuildPacketError
         ParsePacketError
         SendPacketError
-        CreateChannelError
 
         PingTimeout
     }
